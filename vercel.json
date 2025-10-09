@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     { 
-      "src": "**/*.html", /* CORREÇÃO: Usa wildcard recursivo para TODAS as páginas HTML */
+      "src": "**/*.html", /* SOLUÇÃO FINAL: Trata TODOS os HTMLs recursivamente como estáticos */
       "use": "@vercel/static-build"
     },
     { 
@@ -36,7 +36,7 @@
       "dest": "/Painel ultima versao.html"
     },
     {
-      "src": "/(.*)",
+      "src": "/(.*)", /* Rota de fallback */
       "dest": "/$1" 
     }
   ]

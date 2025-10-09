@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     { 
-      "src": "api/create_payment.js", /* Regra de build da API */
+      "src": "api/create_payment.js", 
       "use": "@vercel/node"
     }
   ],
@@ -17,7 +17,7 @@
     },
     {
       "src": "/",
-      "dest": "/index.html" /* Roteamento principal */
+      "dest": "/index.html"
     },
     {
       "src": "/compra.html",
@@ -31,6 +31,5 @@
       "src": "/Painel ultima versao.html",
       "dest": "/Painel ultima versao.html"
     }
-    /* Removendo a regra genérica "/(.*)" para evitar conflito */
   ]
 }

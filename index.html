@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galeria de Portfólio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, onSnapshot, collection, query, where, doc, setDoc, updateDoc, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Configuration ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUQq0J96QQpGSbEXrnLjnsSCSGTzQlVns",
+            authDomain: "galeria-do-site-duplicado.firebaseapp.com",
+            projectId: "galeria-do-site-duplicado",
+            storageBucket: "galeria-do-site-duplicado.firebasestorage.app",
+            messagingSenderId: "717918810787",
+            appId: "1:717918810787:web:01c7cbc1a1b7b880bb8516",
+            measurementId: "G-ZFNYWV4BFB"
+        };
+        
+        // --- Firebase Initialization ---
+        let db, auth;
+        const state = {
+            photos: []
+        };
+        let currentCarouselPhotos = [];
+        let currentImageIndex = 0;
+
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+        
+        onAuthStateChanged(auth, async (user) => {
+            if (!user) {
+                await signInAnonymously(auth);
+            }
+            setupListeners();
+        });
+
+        // --- FUNÇÃO FIREBASE PARA SALVAR FEEDBACK (VOTO ou REAÇÃO) ---
+        const saveProjectFeedback = async (projectId, type, value) => {
+            if (!auth.currentUser || !projectId) {
+                showMessage('Você precisa estar autenticado para interagir com o projeto.', 'error');
+                return;
+            }
+
+            const userId = auth.currentUser.uid;
+            const voteRef = doc(db, `artifacts/${firebaseConfig.projectId}/public/data/galleries/${projectId}/feedback`, userId);
+            const projectRef = doc(db, `artifacts/${firebaseConfig.projectId}/public/data/galleries`, projectId);
+            
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const projectDoc = await transaction.get(projectRef);
+                    const voteDoc = await transaction.get(voteRef);
+                    
+                    if (!projectDoc.exists()) {
+                        throw "Documento do projeto não existe!";
+                    }
+                    
+                    const projectData = projectDoc.data();
+                    let oldVote = voteDoc.exists() ? voteDoc.data() : { rating: 0, reaction: null };
+                    
+                    let newVoteData = { ...oldVote };
+                    let summaryUpdate = {};
+
+                    if (type === 'rating') {
+                        const newRating = value;
+                        const oldRating = oldVote.rating;
+                        
+                        newVoteData.rating = newRating;
+                        transaction.set(voteRef, newVoteData, { merge: true });
+
+                        summaryUpdate = {
+                            ratingCount: (projectData.ratingCount || 0) + (oldRating === 0 ? 1 : 0)
+                        };
+
+                    } else if (type === 'reaction') {
+                        const newReaction = value;
+                        const oldReaction = oldVote.reaction;
+                        
+                        const isReactionToggledOff = (oldReaction === newReaction);
+                        const finalReaction = isReactionToggledOff ? null : newReaction;
+
+                        newVoteData.reaction = finalReaction;
+                        transaction.set(voteRef, newVoteData, { merge: true });
+
+                        summaryUpdate = {
+                            [`reactionCounts.${oldReaction}`]: (projectData.reactionCounts?.[oldReaction] || 0) - (oldReaction && oldReaction !== finalReaction ? 1 : 0),
+                            [`reactionCounts.${finalReaction}`]: (projectData.reactionCounts?.[finalReaction] || 0) + (finalReaction ? 1 : 0),
+                        };
+                    }
+
+                    Object.keys(summaryUpdate).forEach(key => {
+                        if (summaryUpdate[key] < 0) summaryUpdate[key] = 0;
+                    });
+                    
+                    transaction.update(projectRef, summaryUpdate);
+                });
+
+                showMessage(`Sua ${type === 'rating' ? 'classificação' : 'reação'} foi registrada com sucesso!`, 'success');
+
+            } catch (e) {
+                console.error("Erro na transação de feedback:", e);
+                showMessage('Falha ao salvar seu feedback. Tente novamente.', 'error');
+            }
+        };
+
+
+        // --- FUNÇÕES DE INTERAÇÃO (CHAMAM A FUNÇÃO FIREBASE) ---
+        window.rateProject = (projectId, rating) => {
+            saveProjectFeedback(projectId, 'rating', rating);
+        };
+
+        window.reactToProject = (projectId, reaction) => {
+            saveProjectFeedback(projectId, 'reaction', reaction);
+        };
+        
+        // --- FUNÇÕES DE UI ---
+        const showMessage = (message, type = 'info') => {
+            const messageBox = document.getElementById('message-box');
+            messageBox.textContent = message;
+            messageBox.className = 'p-3 mb-4 rounded-md text-white transition-opacity duration-300';
+            
+            if (type === 'success') {
+                messageBox.classList.add('bg-green-500');
+            } else if (type === 'error') {
+                messageBox.classList.add('bg-red-500');
+            } else {
+                messageBox.classList.add('bg-blue-500');
+            }
+            
+            messageBox.classList.remove('opacity-0', 'hidden');
+            setTimeout(() => {
+                messageBox.classList.add('opacity-0');
+                setTimeout(() => messageBox.classList.add('hidden'), 300);
+            }, 3000);
+        };
+        
+        const formatComodosList = (listaComodos) => {
+            if (!listaComodos || listaComodos.length === 0) {
+                return 'N/A';
+            }
+            return listaComodos.map(item => `${item.comodo} (${item.quantidade})`).join(', ');
+        };
+
+        const generateDisplayStars = (rating) => {
+            // Estrelas de visualização para o grid e modal
+            const fullStars = Math.round(rating); 
+            let html = '';
+            const fullStarSvg = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 fill-current text-yellow-400" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.691-.921 1.99 0l1.242 3.824a1 1 0 00.95.691h4.027c.969 0 1.371 1.243.588 1.81L14.71 12.33c-.3.22-.457.536-.457.863v4.027c0 .969-1.243 1.371-1.81.588l-3.824-1.242a1 1 0 00-.691 0L5.94 17.81c-.567.567-1.81.165-1.81-.796v-4.027c0-.327-.157-.643-.457-.863L2.24 9.352c-.783-.567-.381-1.81.588-1.81h4.027c.367 0 .707-.202.95-.588l1.242-3.824z" /></svg>`;
+            const emptyStarSvg = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 fill-current text-gray-400" viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M9.049 2.927c.3-.921 1.691-.921 1.99 0l1.242 3.824a1 1 0 00.95.691h4.027c.969 0 1.371 1.243.588 1.81L14.71 12.33c-.3.22-.457.536-.457.863v4.027c0 .969-1.243 1.371-1.81.588l-3.824-1.242a1 1 0 00-.691 0L5.94 17.81c-.567.567-1.81.165-1.81-.796v-4.027c0-.327-.157-.643-.457-.863L2.24 9.352c-.783-.567-.381-1.81.588-1.81h4.027c.367 0 .707-.202.95-.588l1.242-3.824z" /></svg>`;
+
+            for (let i = 1; i <= 5; i++) {
+                html += (i <= fullStars) ? fullStarSvg : emptyStarSvg;
+            }
+            return html;
+        };
+
+        const renderGallery = () => {
+            const container = document.getElementById('photo-gallery');
+            container.innerHTML = '';
+            
+            if (state.photos.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-1 sm:col-span-2 lg:col-span-3 text-center py-20">
+                        <p class="text-xl text-gray-500">Nenhum item na galeria ainda.</p>
+                        <p class="text-gray-400 mt-2">Adicione novos itens no painel de administração.</p>
+                    </div>
+                `;
+            } else {
+                state.photos.forEach(projeto => {
+                    const photoCard = document.createElement('div');
+                    
+                    // Adiciona o ID do documento como um atributo de dado no elemento
+                    photoCard.setAttribute('data-project-id', projeto.id);
+                    
+                    photoCard.classList.add('bg-white', 'rounded-lg', 'shadow-xl', 'p-4', 'flex', 'flex-col', 'items-center', 'space-y-2', 'cursor-pointer', 'transform', 'hover:scale-[1.03]', 'transition-all');
+                    
+                    // Chama a nova função 'showModalFromCard', que lê o ID do atributo data
+                    photoCard.onclick = (e) => window.showModalFromCard(e.currentTarget);
+                    
+                    const previewImage = projeto.images && projeto.images.length > 0 ? projeto.images[0].url : 'https://placehold.co/600x400/0095f6/ffffff?text=Projeto';
+                    
+                    const tipoProjeto = projeto.tipoProjeto || 'Projeto';
+                    const comodosResumo = formatComodosList(projeto.listaComodos);
+                    const valorFormatado = (projeto.valorProjeto || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                    const descricaoCurta = (projeto.descricaoProjeto || '').length > 70 
+                        ? projeto.descricaoProjeto.substring(0, 70) + '...' 
+                        : projeto.descricaoProjeto;
+                    
+                    // --- VARIÁVEIS PARA O GRID ---
+                    const averageRating = projeto.averageRating || 0; 
+                    const reactionCounts = projeto.reactionCounts || {};
+                    const curtirCount = reactionCounts.Curtir || 0; 
+                    const ameiCount = reactionCounts.Amei || 0; 
+                    
+                    photoCard.innerHTML = `
+                        <div class="w-full h-48 bg-gray-200 rounded-md overflow-hidden">
+                            <img src="${previewImage}" alt="${tipoProjeto}" class="w-full h-full object-cover">
+                        </div>
+                        <p class="font-bold text-lg text-indigo-700">${tipoProjeto}</p>
+                        <p class="text-sm text-gray-600 text-center font-medium">${comodosResumo}</p>
+                        <p class="text-xs italic text-gray-500 text-center">${descricaoCurta}</p>
+                        
+                        <p class="text-md font-semibold text-green-600">${valorFormatado}</p>
+                        
+                        <div class="flex justify-center items-center space-x-3 text-sm text-gray-500">
+                            
+                            <div class="flex items-center space-x-1">
+                                <span class="font-bold text-xs text-yellow-500">${averageRating.toFixed(1)}</span>
+                                <div class="flex">${generateDisplayStars(averageRating)}</div>
+                            </div>
+                            
+                            <div class="flex items-center space-x-1">
+                                <span class="text-xs">👍</span>
+                                <span class="font-bold text-xs">${curtirCount}</span>
+                            </div>
+
+                             <div class="flex items-center space-x-1">
+                                <span class="text-xs">❤️</span>
+                                <span class="font-bold text-xs">${ameiCount}</span>
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(photoCard);
+                });
+            }
+            
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('app-container').classList.remove('hidden');
+        };
+        
+        const setupListeners = () => {
+            if (!auth.currentUser) {
+                console.error("Usuário não autenticado. Não é possível configurar o listener do Firestore.");
+                return;
+            }
+            
+            const q = query(
+                collection(db, `artifacts/${firebaseConfig.projectId}/public/data/galleries`),
+                where('tipoProjeto', '==', 'Projetos prontos')
+            );
+            
+            onSnapshot(q, (querySnapshot) => {
+                state.photos = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderGallery();
+            }, (error) => {
+                console.error("Erro no listener de snapshot:", error);
+                showMessage('Erro ao carregar projetos. Verifique as permissões.', 'error');
+                
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('app-container').classList.remove('hidden');
+            });
+        };
+
+        // LÊ O ID DO DOM E CHAMA O showPortfolioImages
+        window.showModalFromCard = (cardElement) => {
+            const docId = cardElement.getAttribute('data-project-id');
+            if (docId) {
+                window.showPortfolioImages(docId);
+            } else {
+                showMessage('Erro: ID do projeto não encontrado no cartão.', 'error');
+            }
+        };
+        
+        window.showPortfolioImages = (docId) => {
+            if (!docId) {
+                console.error("ERRO: ID do documento é nulo ou indefinido.");
+                showMessage('Erro ao carregar detalhes: ID do projeto não encontrado.', 'error');
+                return;
+            }
+            
+            const portfolioItem = state.photos.find(p => p.id === docId);
+            
+            if (!portfolioItem || !portfolioItem.images || portfolioItem.images.length === 0) {
+                showMessage('Detalhes ou imagens não encontrados. Tente recarregar a página.', 'info');
+                return;
+            }
+            
+            currentCarouselPhotos = portfolioItem.images;
+            currentImageIndex = 0;
+
+            const viewerTitleDesktop = document.getElementById('viewer-title');
+            const viewerTitleMobile = document.getElementById('viewer-title-mobile');
+            const projectDetailsDesktop = document.getElementById('project-details-desktop'); 
+            const projectDetailsMobile = document.getElementById('project-details-mobile'); 
+            const thumbnailsContainer = document.getElementById('carousel-thumbnails');
+
+            // 1. Títulos do Modal
+            const titleText = portfolioItem.tipoProjeto || 'Detalhes do Projeto';
+            viewerTitleDesktop.textContent = titleText;
+            viewerTitleMobile.textContent = titleText;
+            
+            // 2. Detalhes do Projeto
+            const valorFormatado = (portfolioItem.valorProjeto || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            const comodosDetalhe = formatComodosList(portfolioItem.listaComodos);
+            const descricaoProjeto = portfolioItem.descricaoProjeto || 'Nenhuma descrição fornecida.';
+            
+            const projectId = portfolioItem.id;
+
+            // --- Extração de Dados de Interatividade ---
+            const reactionCounts = portfolioItem.reactionCounts || {};
+            const curtirCount = reactionCounts.Curtir || 0; 
+            const ameiCount = reactionCounts.Amei || 0; 
+            const descurtirCount = reactionCounts.Descurtir || 0; 
+
+            const averageRating = portfolioItem.averageRating || 0; 
+            const ratingCount = portfolioItem.ratingCount || 0; 
+            // --- FIM EXTRAÇÃO ---
+            
+            // CONSTRUÇÃO DO BOTÃO DE COMPRA
+            const isIdValid = !!projectId; 
+            const buttonClass = isIdValid ? 
+                              'w-full py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors' :
+                              'w-full py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-gray-400 cursor-not-allowed';
+            const buttonText = isIdValid ? 'Comprar Projeto' : 'ID do Projeto Ausente';
+
+
+            // --- BLOCO DE CLASSIFICAÇÃO E REAÇÕES COM CONTAGEM (Modal) ---
+            const ratingAndReactionHtml = `
+                <div class="mt-4 pt-4 border-t border-gray-700 space-y-4">
+                    
+                    <div class="text-center bg-gray-700 p-2 rounded-lg">
+                        <p class="text-sm font-semibold text-indigo-200 mb-1">Classificação Média:</p>
+                        <div class="flex items-center justify-center text-xl">
+                            <span class="font-bold text-yellow-400 mr-2">${averageRating.toFixed(1)}</span>
+                            <div class="flex">${generateDisplayStars(averageRating)}</div>
+                            <span class="text-xs text-gray-400 ml-2">(${ratingCount} votos)</span>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center">
+                        <p class="text-sm font-semibold text-indigo-300 mb-2">Sua Classificação:</p>
+                        <div class="flex justify-center space-x-1 text-2xl text-yellow-400">
+                            ${[5, 4, 3, 2, 1].map(star => `
+                                <button onclick="window.rateProject('${projectId}', ${star})" aria-label="${star} estrelas" class="hover:scale-110 transition-transform focus:outline-none">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M9.049 2.927c.3-.921 1.691-.921 1.99 0l1.242 3.824a1 1 0 00.95.691h4.027c.969 0 1.371 1.243.588 1.81L14.71 12.33c-.3.22-.457.536-.457.863v4.027c0 .969-1.243 1.371-1.81.588l-3.824-1.242a1 1 0 00-.691 0L5.94 17.81c-.567.567-1.81.165-1.81-.796v-4.027c0-.327-.157-.643-.457-.863L2.24 9.352c-.783-.567-.381-1.81.588-1.81h4.027c.367 0 .707-.202.95-.588l1.242-3.824z" />
+                                    </svg>
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div class="text-center">
+                        <p class="text-sm font-semibold text-indigo-300 mb-2">Reações Totais:</p>
+                        <div class="flex justify-center space-x-4 text-xl">
+                            <div class="flex flex-col items-center">
+                                <button onclick="window.reactToProject('${projectId}', 'Curtir')" aria-label="Curtir" class="text-green-500 hover:scale-125 transition-transform focus:outline-none">👍</button>
+                                <span class="text-xs text-gray-400 font-bold">${curtirCount}</span>
+                            </div>
+                            <div class="flex flex-col items-center">
+                                <button onclick="window.reactToProject('${projectId}', 'Descurtir')" aria-label="Descurtir" class="text-red-500 hover:scale-125 transition-transform focus:outline-none">👎</button>
+                                <span class="text-xs text-gray-400 font-bold">${descurtirCount}</span>
+                            </div>
+                            <div class="flex flex-col items-center">
+                                <button onclick="window.reactToProject('${projectId}', 'Amei')" aria-label="Amei" class="text-pink-500 hover:scale-125 transition-transform focus:outline-none">❤️</button>
+                                <span class="text-xs text-gray-400 font-bold">${ameiCount}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            // --- FIM BLOCO DE INTERAÇÃO ---
+
+
+            // Monta o HTML final
+            const detailsHtml = `
+                <div class="space-y-3">
+                    <div class="flex flex-wrap gap-x-4">
+                        <p class="text-sm font-semibold text-indigo-400">
+                            Valor Estimado: <span class="text-green-400 font-normal">${valorFormatado}</span>
+                        </p>
+                        <p class="text-sm font-semibold text-indigo-400">
+                            Cômodos: <span class="text-gray-300 font-normal">${comodosDetalhe}</span>
+                        </p>
+                    </div>
+                    <div class="border-t border-gray-700 pt-3">
+                        <strong class="text-indigo-400 block mb-1 text-sm">Descrição:</strong>
+                        <p class="text-xs text-gray-300 whitespace-pre-wrap max-h-40 overflow-y-auto">${descricaoProjeto}</p>
+                    </div>
+                </div>
+                
+                <form action="compra.html" method="GET" class="mt-4">
+                    <input type="hidden" name="id" value="${projectId}" />
+                    <button type="submit" class="${buttonClass}" ${!isIdValid ? 'disabled' : ''}>
+                        ${buttonText}
+                    </button>
+                </form>
+                
+                ${ratingAndReactionHtml}
+            `;
+
+            // Aplica os detalhes no container desktop
+            projectDetailsDesktop.innerHTML = `
+                <div class="bg-gray-800 p-4 rounded-lg shadow-inner text-white w-full max-w-sm ml-4 h-full flex flex-col justify-between">
+                    <div>
+                        <h4 class="text-xl font-bold mb-3 text-indigo-300">${titleText}</h4>
+                        ${detailsHtml}
+                    </div>
+                </div>
+            `;
+            
+            // Aplica os detalhes no container móvel
+            projectDetailsMobile.innerHTML = detailsHtml;
+
+            // 3. Renderiza Miniaturas
+            thumbnailsContainer.innerHTML = '';
+            currentCarouselPhotos.forEach((image, index) => {
+                const thumbElement = document.createElement('img');
+                thumbElement.src = image.url;
+                thumbElement.alt = `Thumbnail ${index + 1}`;
+                thumbElement.classList.add('w-20', 'h-20', 'object-cover', 'rounded-md', 'cursor-pointer', 'transition-all', 'duration-300', 'border-2', 'border-transparent', 'hover:border-indigo-500');
+                thumbElement.onclick = () => window.jumpToImage(index);
+                thumbnailsContainer.appendChild(thumbElement);
+            });
+
+            window.updateCarousel();
+            document.getElementById('image-viewer-modal').classList.remove('hidden');
+        };
+        
+        window.updateCarousel = () => {
+            const mainImage = document.getElementById('main-carousel-image');
+            const thumbnails = document.getElementById('carousel-thumbnails').children;
+
+            if (currentCarouselPhotos.length > 0) {
+                mainImage.src = currentCarouselPhotos[currentImageIndex].url;
+                mainImage.alt = `Imagem ${currentImageIndex + 1} de ${currentCarouselPhotos.length}`;
+
+                for (let i = 0; i < thumbnails.length; i++) {
+                    thumbnails[i].classList.remove('border-indigo-500');
+                    if (i === currentImageIndex) {
+                        thumbnails[i].classList.add('border-indigo-500');
+                    }
+                }
+            }
+        };
+
+        window.prevImage = () => {
+            if (currentCarouselPhotos.length > 0) {
+                currentImageIndex = (currentImageIndex - 1 + currentCarouselPhotos.length) % currentCarouselPhotos.length;
+                window.updateCarousel();
+            }
+        };
+
+        window.nextImage = () => {
+            if (currentCarouselPhotos.length > 0) {
+                currentImageIndex = (currentImageIndex + 1) % currentCarouselPhotos.length;
+                window.updateCarousel();
+            }
+        };
+
+        window.jumpToImage = (index) => {
+            if (index >= 0 && index < currentCarouselPhotos.length) {
+                currentImageIndex = index;
+                window.updateCarousel();
+            }
+        };
+
+        window.closeImageViewerModal = () => {
+            document.getElementById('image-viewer-modal').classList.add('hidden');
+        };
+
+        window.onload = () => {};
+    </script>
+</head>
+<body class="bg-gray-100 font-sans text-gray-800">
+
+    <div id="loading" class="fixed inset-0 bg-gray-100 flex items-center justify-center z-50">
+        <div class="text-center">
+            <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-indigo-500 mx-auto"></div>
+            <p class="mt-4 text-gray-600">Carregando galeria...</p>
+        </div>
+    </div>
+
+    <div id="app-container" class="container mx-auto p-4 md:p-8 space-y-12 hidden">
+        
+        <header class="text-center space-y-2">
+            <h1 class="text-4xl font-extrabold text-indigo-800">Galeria de Portfólio</h1>
+            <p class="text-lg text-gray-600">Explore nossos projetos de arquitetura e interiores</p>
+            <div id="message-box" class="opacity-0 hidden"></div>
+        </header>
+
+        <section class="bg-white rounded-2xl shadow-xl p-6 md:p-8">
+            <div id="photo-gallery" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                </div>
+        </section>
+
+    </div>
+
+    <div id="image-viewer-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-90 z-50 flex items-center justify-center p-4">
+        <div class="w-full max-w-7xl max-h-[95vh] overflow-hidden relative flex flex-col">
+            
+            <button onclick="window.closeImageViewerModal()" class="absolute top-4 right-4 text-white hover:text-indigo-400 transition-colors z-50 p-2 rounded-full bg-gray-900 bg-opacity-50 hover:bg-opacity-75">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            
+            <div class="flex flex-col lg:flex-row items-start flex-grow justify-between">
+                
+                <div class="w-full lg:hidden bg-gray-800 p-4 rounded-b-lg mb-4 text-white">
+                    <h3 id="viewer-title-mobile" class="text-xl font-bold mb-2"></h3>
+                    <div id="project-details-mobile" class="text-sm">
+                    </div>
+                </div>
+
+                <h3 id="viewer-title" class="text-xl font-bold text-white mb-4 text-center absolute top-4 left-1/2 transform -translate-x-1/2 z-50 p-2 bg-gray-900 bg-opacity-50 rounded-lg hidden lg:block"></h3>
+
+                <div class="flex w-full h-full">
+
+                    <div class="relative flex-grow flex items-center justify-center p-4">
+                        <button onclick="window.prevImage()" class="absolute left-0 lg:left-4 z-20 p-3 rounded-full bg-gray-900 bg-opacity-50 text-white hover:bg-opacity-75 transition-colors focus:outline-none">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                            </svg>
+                        </button>
+
+                        <img id="main-carousel-image" src="" alt="Imagem Principal" class="max-w-full h-auto max-h-[80vh] object-contain rounded-lg">
+                        
+                        <button onclick="window.nextImage()" class="absolute right-0 lg:right-4 z-20 p-3 rounded-full bg-gray-900 bg-opacity-50 text-white hover:bg-opacity-75 transition-colors focus:outline-none">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div id="project-details-desktop" class="hidden lg:block">
+                    </div>
+
+                </div>
+
+            </div>
+            
+            <div class="bg-gray-800 bg-opacity-75 w-full p-3 flex-shrink-0">
+                <div id="carousel-thumbnails" class="flex justify-center items-center overflow-x-auto w-full space-x-2">
+                    </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

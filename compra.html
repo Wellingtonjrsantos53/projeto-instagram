@@ -23,9 +23,8 @@
         };
         
         // --- VARIÁVEIS GERAIS ---
-        // REMOVIDO: const API_BASE_URL = '...';
-        // CORREÇÃO: Usando caminho relativo, mais confiável no Vercel
-        const PAYMENT_ENDPOINT = '/api/create_payment'; 
+        // CORREÇÃO: Usando o caminho relativo para o novo arquivo Serverless
+        const PAYMENT_ENDPOINT = '/api/create_pix_payment'; 
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -109,13 +108,16 @@
                  return;
             }
             
-            const payerData = {
-                email: document.getElementById('payerEmail').value,
-                first_name: document.getElementById('payerFirstName').value,
-                last_name: document.getElementById('payerLastName').value,
+            // CORREÇÃO PRINCIPAL AQUI: Montando o payload de acordo com o código funcional (front-end-server.TXT)
+            const paymentBody = {
+                amount: projeto.valorProjeto, // O backend espera 'amount'
+                description: `Projeto: ${projeto.tipoProjeto || 'Sem Nome'}`,
+                email: document.getElementById('payerEmail').value, // O backend espera 'email' solto
+                firstName: document.getElementById('payerFirstName').value, // O backend espera 'firstName' solto
+                lastName: document.getElementById('payerLastName').value, // O backend espera 'lastName' solto
                 identification: {
                     type: payerDocumentValue.length === 11 ? 'CPF' : 'CNPJ',
-                    number: payerDocumentValue
+                    number: payerDocumentValue // O backend espera a identificação aninhada
                 }
             };
 
@@ -123,15 +125,8 @@
             pixOutputContainer.innerHTML = '<p class="text-indigo-500">Gerando QR Code e Chave PIX. Aguarde...</p>';
             pixOutputContainer.classList.remove('hidden'); 
 
-            const paymentBody = {
-                transaction_amount: projeto.valorProjeto,
-                description: `Projeto: ${projeto.tipoProjeto || 'Sem Nome'}`,
-                payment_method_id: 'pix', 
-                payer: payerData,
-            };
-
             try {
-                // CORREÇÃO APLICADA AQUI: Usa o caminho relativo
+                // Usa o caminho relativo para o novo endpoint
                 const response = await fetch(PAYMENT_ENDPOINT, { 
                     method: 'POST',
                     headers: {
@@ -148,7 +143,8 @@
                     let errorMessage = `Erro na API. Status: ${response.status}.`;
                     try {
                         const errorJson = JSON.parse(responseText);
-                        errorMessage += ` Detalhe: ${errorJson.message || errorJson.error || responseText.substring(0, 100)}`;
+                        // Exibindo o erro detalhado que vem do backend
+                        errorMessage += ` Detalhe: ${errorJson.error || responseText.substring(0, 100)}`; 
                     } catch {
                         errorMessage += ` Resposta Bruta: ${responseText.substring(0, 100)}...`;
                     }

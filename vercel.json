@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     { 
-      "src": "*.html", 
+      "src": "**/*.html", /* CORREÇÃO: Usa wildcard recursivo para TODAS as páginas HTML */
       "use": "@vercel/static-build"
     },
     { 
@@ -34,6 +34,10 @@
     {
       "src": "/Painel ultima versao.html",
       "dest": "/Painel ultima versao.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1" 
     }
   ]
 }

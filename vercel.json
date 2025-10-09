@@ -2,11 +2,11 @@
   "version": 2,
   "builds": [
     { 
-      "src": "*.html", /* RE-ADICIONADO: Diz ao Vercel que há arquivos estáticos na raiz */
+      "src": "*.html", 
       "use": "@vercel/static-build"
     },
     { 
-      "src": "api/create_payment.js", /* Assume que create_payment.js está em /api/ */
+      "src": "api/create_payment.js", 
       "use": "@vercel/node"
     }
   ],

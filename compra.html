@@ -23,8 +23,9 @@
         };
         
         // --- VARIÁVEIS GERAIS ---
-        const API_BASE_URL = 'https://pagamento-de-projetosvercelapp-wellingtons-projects-02014e31.vercel.app'; 
-        const PAYMENT_ENDPOINT = '/create_payment'; 
+        // REMOVIDO: const API_BASE_URL = '...';
+        // CORREÇÃO: Usando caminho relativo, mais confiável no Vercel
+        const PAYMENT_ENDPOINT = '/api/create_payment'; 
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -32,7 +33,7 @@
         
         // --- Funções de Ajuda ---
         
-        // CORREÇÃO: Lê APENAS o ID da URL (necessário após Opção 3)
+        // Lê APENAS o ID da URL
         const getProjectIdFromUrl = () => {
             const params = new URLSearchParams(window.location.search);
             return params.get('id');
@@ -130,7 +131,8 @@
             };
 
             try {
-                const response = await fetch(`${API_BASE_URL}${PAYMENT_ENDPOINT}`, { 
+                // CORREÇÃO APLICADA AQUI: Usa o caminho relativo
+                const response = await fetch(PAYMENT_ENDPOINT, { 
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

@@ -23,7 +23,8 @@
         };
         
         // --- VARIÁVEIS GERAIS ---
-        const PAYMENT_ENDPOINT = '/create_pix_payment'; // Caminho correto para o endpoint do servidor local
+        // ATUALIZADO: Aponta para a função Serverless do Vercel
+        const PAYMENT_ENDPOINT = '/api/pix/create_pix_payment'; 
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -117,8 +118,7 @@
                 email: document.getElementById('payerEmail').value,
                 firstName: document.getElementById('payerFirstName').value,
                 lastName: document.getElementById('payerLastName').value,
-                // Incluindo o telefone limpo (DDD + Número)
-                phone: payerPhoneValue, 
+                phone: payerPhoneValue, // Enviando DDD + Número
                 identification: {
                     type: payerDocumentValue.length === 11 ? 'CPF' : 'CNPJ',
                     number: payerDocumentValue

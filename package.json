@@ -1,14 +1,20 @@
 {
   "name": "wrarquitetura",
   "version": "1.0.0",
-  "description": "",
-  "main": "server.js",
+  "description": "Servidor local e integração com Mercado Pago via PIX",
+  "main": "front-end-server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node front-end-server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "mercadopago",
+    "pix",
+    "express",
+    "firebase",
+    "arquitetura"
+  ],
+  "author": "Wellington Rodrigues dos Santos",
   "license": "ISC",
   "dependencies": {
     "body-parser": "^2.2.0",

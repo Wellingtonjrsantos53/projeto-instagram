@@ -1,3 +1,7 @@
+console.log("🟢 Iniciando servidor PIX...");
+process.on('uncaughtException', err => console.error("Erro não tratado:", err));
+process.on('unhandledRejection', err => console.error("Rejeição não tratada:", err));
+
 const express = require('express');
 const path = require('path');
 const { MercadoPagoConfig, Payment } = require('mercadopago');
@@ -37,7 +41,14 @@ app.get('/', (req, res) => {
 // ===============================
 app.post('/create_pix_payment', async (req, res) => {
     try {
-        const { amount, description, email, firstName, lastName, identification } = req.body;
+        // Recebe o novo campo 'phone'
+        const { amount, description, email, firstName, lastName, identification, phone } = req.body;
+
+        // Estrutura o objeto de telefone
+        const phoneData = phone && phone.length >= 10 ? {
+            area_code: phone.substring(0, 2),
+            number: phone.substring(2)
+        } : undefined;
 
         const paymentData = {
             transaction_amount: parseFloat(amount),
@@ -47,6 +58,8 @@ app.post('/create_pix_payment', async (req, res) => {
                 email: email,
                 first_name: firstName,
                 last_name: lastName,
+                // Inclui a estrutura de telefone
+                phone: phoneData,
                 identification: identification ? {
                     type: identification.type || 'CPF',
                     number: identification.number
@@ -67,17 +80,22 @@ app.post('/create_pix_payment', async (req, res) => {
             status: result.status,
             qr_code_base64: result.point_of_interaction?.transaction_data?.qr_code_base64,
             qr_code: result.point_of_interaction?.transaction_data?.qr_code,
+            // CORREÇÃO: O Mercado Pago retorna a chave Copia e Cola no campo qr_code, não qr_code_text
+            qr_code_text: result.point_of_interaction?.transaction_data?.qr_code, 
             ticket_url: result.point_of_interaction?.transaction_data?.ticket_url
         });
 
     } catch (error) {
         console.error('Erro ao criar pagamento PIX:', error);
+        // Tenta extrair a mensagem de erro da API do Mercado Pago, se houver
+        const errorDetail = error.message || 'Erro desconhecido ao processar pagamento.';
         res.status(500).json({
             success: false,
-            error: error.message
+            error: errorDetail
         });
     }
 });
 
 // ===============================
 // 🔁 Endpoint
+// (O restante do arquivo permanece inalterado)

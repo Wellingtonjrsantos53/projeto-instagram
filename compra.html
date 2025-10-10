@@ -23,8 +23,7 @@
         };
         
         // --- VARIÁVEIS GERAIS ---
-        // CORREÇÃO: Usando o caminho relativo para o novo arquivo Serverless
-        const PAYMENT_ENDPOINT = '/api/create_pix_payment'; 
+        const PAYMENT_ENDPOINT = '/create_pix_payment'; // Caminho correto para o endpoint do servidor local
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -99,6 +98,9 @@
             }
 
             const payerDocumentValue = document.getElementById('payerDocument').value.replace(/\D/g, '');
+            // Captura e limpa o telefone
+            const payerPhoneValue = document.getElementById('payerPhone').value.replace(/\D/g, '');
+
 
             // Validação de documento mais robusta
             if (payerDocumentValue.length !== 11 && payerDocumentValue.length !== 14) {
@@ -108,16 +110,18 @@
                  return;
             }
             
-            // CORREÇÃO PRINCIPAL AQUI: Montando o payload de acordo com o código funcional (front-end-server.TXT)
+            // Montando o payload para o backend
             const paymentBody = {
-                amount: projeto.valorProjeto, // O backend espera 'amount'
+                amount: projeto.valorProjeto, 
                 description: `Projeto: ${projeto.tipoProjeto || 'Sem Nome'}`,
-                email: document.getElementById('payerEmail').value, // O backend espera 'email' solto
-                firstName: document.getElementById('payerFirstName').value, // O backend espera 'firstName' solto
-                lastName: document.getElementById('payerLastName').value, // O backend espera 'lastName' solto
+                email: document.getElementById('payerEmail').value,
+                firstName: document.getElementById('payerFirstName').value,
+                lastName: document.getElementById('payerLastName').value,
+                // Incluindo o telefone limpo (DDD + Número)
+                phone: payerPhoneValue, 
                 identification: {
                     type: payerDocumentValue.length === 11 ? 'CPF' : 'CNPJ',
-                    number: payerDocumentValue // O backend espera a identificação aninhada
+                    number: payerDocumentValue
                 }
             };
 
@@ -126,7 +130,6 @@
             pixOutputContainer.classList.remove('hidden'); 
 
             try {
-                // Usa o caminho relativo para o novo endpoint
                 const response = await fetch(PAYMENT_ENDPOINT, { 
                     method: 'POST',
                     headers: {
@@ -143,7 +146,6 @@
                     let errorMessage = `Erro na API. Status: ${response.status}.`;
                     try {
                         const errorJson = JSON.parse(responseText);
-                        // Exibindo o erro detalhado que vem do backend
                         errorMessage += ` Detalhe: ${errorJson.error || responseText.substring(0, 100)}`; 
                     } catch {
                         errorMessage += ` Resposta Bruta: ${responseText.substring(0, 100)}...`;
@@ -316,6 +318,10 @@
                                 <div>
                                     <label for="payerEmail" class="block text-sm font-medium text-gray-700">Email</label>
                                     <input type="email" id="payerEmail" name="payerEmail" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                                </div>
+                                <div>
+                                    <label for="payerPhone" class="block text-sm font-medium text-gray-700">Telefone (Ex: 11987654321)</label>
+                                    <input type="tel" id="payerPhone" name="payerPhone" pattern="[0-9]{10,11}" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" placeholder="DDD + Número (apenas números)">
                                 </div>
                                 <div>
                                     <label for="payerDocument" class="block text-sm font-medium text-gray-700">CPF/CNPJ (Apenas números)</label>

@@ -2,9 +2,7 @@
   "name": "wrarquitetura",
   "version": "1.0.0",
   "description": "Servidor local e integração com Mercado Pago via PIX",
-  
   "main": "api/index.js",
-  
   "scripts": {
     "start": "node api/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -19,12 +17,12 @@
   "author": "Wellington Rodrigues dos Santos",
   "license": "ISC",
   "dependencies": {
+    "@mercadopago/sdk-js": "^0.0.3",
     "body-parser": "^2.2.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "mercadopago": "^2.9.0"
   },
-  
   "engines": {
     "node": "20.x"
   }

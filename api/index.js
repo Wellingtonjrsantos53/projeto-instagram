@@ -2,13 +2,12 @@ const express = require('express');
 const { MercadoPagoConfig, Payment } = require('mercadopago');
 const cors = require('cors');
 const crypto = require('crypto');
-const bodyParser = require('body-parser'); // Mantenha a importação
+const bodyParser = require('body-parser');
 
 const app = express();
 
 // ===========================================
-// !!! CORREÇÃO CRÍTICA DO VERCEL/EXPRESS !!!
-// Inicializar os middlewares de corpo e CORS primeiro
+// MIDDLEWARES CRÍTICOS PARA VERCEL
 // ===========================================
 app.use(cors());
 app.use(express.json()); 
@@ -16,10 +15,10 @@ app.use(bodyParser.json());
 
 // ===============================
 // 🔑 Configuração do MercadoPago
-// (Mantenha o Access Token fixo para depuração, mas use variável em produção)
 // ===============================
 const client = new MercadoPagoConfig({
-    accessToken: 'APP_USR-8155657262249649-091319-ee52419ad3994e7b101524cd6c6fd5ee-290268833',
+    // !!! ACCESS TOKEN ATUALIZADO AQUI !!!
+    accessToken: 'APP_USR-921297146181542-091415-5c46273d532824b20803e3e64815c4c0-290268833', 
     options: {
         integratorId: 'dev_aa2d89add88111ebb2fb0242ac130004'
     }
@@ -78,6 +77,7 @@ app.post('/create_pix_payment', async (req, res) => {
 
     } catch (error) {
         
+        // --- LOG DE DEBUG 2: Erro Detalhado do MP ---
         console.error('ERRO FATAL ao criar PIX (Mercado Pago API):');
         console.error(error);
         

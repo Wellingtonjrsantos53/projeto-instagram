@@ -2,9 +2,11 @@
   "name": "wrarquitetura",
   "version": "1.0.0",
   "description": "Servidor local e integração com Mercado Pago via PIX",
-  "main": "front-end-server.js",
+  
+  "main": "api/pix.js",
+  
   "scripts": {
-    "start": "node front-end-server.js",
+    "start": "node api/pix.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -21,5 +23,9 @@
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "mercadopago": "^2.9.0"
+  },
+  
+  "engines": {
+    "node": "20.x"
   }
 }

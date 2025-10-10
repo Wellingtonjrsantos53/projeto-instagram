@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "Servidor local e integração com Mercado Pago via PIX",
   
-  "main": "api/pix.js",
+  "main": "api/index.js",
   
   "scripts": {
-    "start": "node api/pix.js",
+    "start": "node api/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

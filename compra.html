@@ -23,8 +23,8 @@
         };
         
         // --- VARIÁVEIS GERAIS ---
-        // ATUALIZADO: Aponta para a função Serverless do Vercel
-        const PAYMENT_ENDPOINT = '/api/pix/create_pix_payment'; 
+        // ATUALIZADO: Aponta para a função Serverless raiz da API do Vercel (api/index.js)
+        const PAYMENT_ENDPOINT = '/api/create_pix_payment'; 
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -146,6 +146,7 @@
                     let errorMessage = `Erro na API. Status: ${response.status}.`;
                     try {
                         const errorJson = JSON.parse(responseText);
+                        // Agora a API retorna detalhes do erro do MP no campo 'error'
                         errorMessage += ` Detalhe: ${errorJson.error || responseText.substring(0, 100)}`; 
                     } catch {
                         errorMessage += ` Resposta Bruta: ${responseText.substring(0, 100)}...`;

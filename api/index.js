@@ -2,15 +2,23 @@ const express = require('express');
 const { MercadoPagoConfig, Payment } = require('mercadopago');
 const cors = require('cors');
 const crypto = require('crypto');
-const bodyParser = require('body-parser');
+const bodyParser = require('body-parser'); // Mantenha a importação
 
 const app = express();
 
+// ===========================================
+// !!! CORREÇÃO CRÍTICA DO VERCEL/EXPRESS !!!
+// Inicializar os middlewares de corpo e CORS primeiro
+// ===========================================
+app.use(cors());
+app.use(express.json()); 
+app.use(bodyParser.json()); 
+
 // ===============================
 // 🔑 Configuração do MercadoPago
+// (Mantenha o Access Token fixo para depuração, mas use variável em produção)
 // ===============================
 const client = new MercadoPagoConfig({
-    // Lembre-se de usar variáveis de ambiente no Vercel para esta chave!
     accessToken: 'APP_USR-8155657262249649-091319-ee52419ad3994e7b101524cd6c6fd5ee-290268833',
     options: {
         integratorId: 'dev_aa2d89add88111ebb2fb0242ac130004'
@@ -19,17 +27,15 @@ const client = new MercadoPagoConfig({
 const payment = new Payment(client);
 
 // ===============================
-// 🚀 Middlewares
-// ===============================
-app.use(cors());
-app.use(express.json()); 
-app.use(bodyParser.json()); 
-
-// ===============================
 // 💸 Endpoint: Criar pagamento PIX
 // ===============================
 app.post('/create_pix_payment', async (req, res) => {
     try {
+        // Log de requisição para ver se o corpo está chegando (req.body)
+        if (!req.body || Object.keys(req.body).length === 0) {
+             console.error("CORPO DA REQUISIÇÃO VAZIO! PROBLEMA DE BODY PARSER!");
+        }
+
         const { amount, description, email, firstName, lastName, identification, phone } = req.body;
 
         const phoneData = phone && phone.length >= 10 ? {
@@ -57,12 +63,10 @@ app.post('/create_pix_payment', async (req, res) => {
             idempotencyKey: crypto.randomUUID(),
         };
         
-        // --- LOG DE DEBUG 1: Dados Enviados ---
         console.log('Dados enviados ao MP:', JSON.stringify(paymentData, null, 2));
 
         const result = await payment.create({ body: paymentData, requestOptions });
 
-        // ✅ Sucesso
         res.json({
             success: true,
             payment_id: result.id,
@@ -74,17 +78,14 @@ app.post('/create_pix_payment', async (req, res) => {
 
     } catch (error) {
         
-        // --- LOG DE DEBUG 2: Erro Detalhado do MP ---
         console.error('ERRO FATAL ao criar PIX (Mercado Pago API):');
-        console.error(error); // Isso imprimirá todo o objeto de erro no console do Vercel!
+        console.error(error);
         
-        // Estrutura a resposta de erro para o Frontend
         const errorDetails = error.cause && error.cause.length > 0 ? error.cause.map(c => `${c.code}: ${c.description}`).join('; ') : 'Detalhes desconhecidos.';
         const httpStatus = error.status || 500;
         
         res.status(httpStatus).json({
             success: false,
-            // Retorna o status HTTP e a descrição do erro (ex: "400: payer.email field is required")
             error: `Falha na API. Status: ${httpStatus}. Detalhes: ${errorDetails}` 
         });
     }

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galeria de Portfólio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, onSnapshot, collection, query, doc, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Configuration ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUQq0J96QQpGSbEXrnLjnsSCSGTzQlVns",
+            authDomain: "galeria-do-site-duplicado.firebaseapp.com",
+            projectId: "galeria-do-site-duplicado",
+            storageBucket: "galeria-do-site-duplicado.firebasestorage.app",
+            messagingSenderId: "717918810787",
+            appId: "1:717918810787:web:01c7cbc1a1b7b880bb8516",
+            measurementId: "G-ZFNYWV4BFB"
+        };
+
+        // --- Firebase Initialization ---
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        const state = { photos: [] };
+        let currentCarouselPhotos = [];
+        let currentImageIndex = 0;
+
+        // --- Autenticação Anônima ---
+        onAuthStateChanged(auth, async (user) => {
+            if (!user) await signInAnonymously(auth);
+            setupListeners();
+        });
+
+        // --- Funções de feedback (mantidas iguais) ---
+        const saveProjectFeedback = async (projectId, type, value) => {
+            if (!auth.currentUser || !projectId) {
+                showMessage('Você precisa estar autenticado para interagir com o projeto.', 'error');
+                return;
+            }
+            const userId = auth.currentUser.uid;
+            const voteRef = doc(db, `artifacts/${firebaseConfig.projectId}/public/data/galleries/${projectId}/feedback`, userId);
+            const projectRef = doc(db, `artifacts/${firebaseConfig.projectId}/public/data/galleries`, projectId);
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const projectDoc = await transaction.get(projectRef);
+                    const voteDoc = await transaction.get(voteRef);
+                    if (!projectDoc.exists()) throw "Projeto não encontrado";
+                    const projectData = projectDoc.data();
+                    let oldVote = voteDoc.exists() ? voteDoc.data() : { rating: 0, reaction: null };
+                    let newVoteData = { ...oldVote };
+                    let summaryUpdate = {};
+
+                    if (type === 'rating') {
+                        const newRating = value;
+                        const oldRating = oldVote.rating;
+                        newVoteData.rating = newRating;
+                        transaction.set(voteRef, newVoteData, { merge: true });
+                        summaryUpdate = { ratingCount: (projectData.ratingCount || 0) + (oldRating === 0 ? 1 : 0) };
+                    } else if (type === 'reaction') {
+                        const newReaction = value;
+                        const oldReaction = oldVote.reaction;
+                        const toggledOff = (oldReaction === newReaction);
+                        const finalReaction = toggledOff ? null : newReaction;
+                        newVoteData.reaction = finalReaction;
+                        transaction.set(voteRef, newVoteData, { merge: true });
+                        summaryUpdate = {
+                            [`reactionCounts.${oldReaction}`]: (projectData.reactionCounts?.[oldReaction] || 0) - (oldReaction && oldReaction !== finalReaction ? 1 : 0),
+                            [`reactionCounts.${finalReaction}`]: (projectData.reactionCounts?.[finalReaction] || 0) + (finalReaction ? 1 : 0),
+                        };
+                    }
+                    Object.keys(summaryUpdate).forEach(k => { if (summaryUpdate[k] < 0) summaryUpdate[k] = 0; });
+                    transaction.update(projectRef, summaryUpdate);
+                });
+                showMessage('Feedback registrado com sucesso!', 'success');
+            } catch (e) {
+                console.error(e);
+                showMessage('Erro ao salvar feedback.', 'error');
+            }
+        };
+
+        window.rateProject = (id, rating) => saveProjectFeedback(id, 'rating', rating);
+        window.reactToProject = (id, reaction) => saveProjectFeedback(id, 'reaction', reaction);
+
+        // --- Exibe mensagens ---
+        const showMessage = (msg, type = 'info') => {
+            const box = document.getElementById('message-box');
+            box.textContent = msg;
+            box.className = 'p-3 mb-4 rounded-md text-white transition-opacity duration-300';
+            box.classList.add(type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-green-500' : 'bg-blue-500');
+            box.classList.remove('hidden', 'opacity-0');
+            setTimeout(() => { box.classList.add('opacity-0'); setTimeout(() => box.classList.add('hidden'), 300); }, 3000);
+        };
+
+        const formatComodosList = (lista) => lista?.length ? lista.map(i => `${i.comodo} (${i.quantidade})`).join(', ') : 'N/A';
+        const generateDisplayStars = (r) => {
+            const full = Math.round(r);
+            const fullStar = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 fill-current text-yellow-400" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.691-.921 1.99 0l1.242 3.824a1 1 0 00.95.691h4.027c.969 0 1.371 1.243.588 1.81L14.71 12.33c-.3.22-.457.536-.457.863v4.027c0 .969-1.243 1.371-1.81.588l-3.824-1.242a1 1 0 00-.691 0L5.94 17.81c-.567.567-1.81.165-1.81-.796v-4.027c0-.327-.157-.643-.457-.863L2.24 9.352c-.783-.567-.381-1.81.588-1.81h4.027c.367 0 .707-.202.95-.588l1.242-3.824z" /></svg>`;
+            const emptyStar = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 fill-current text-gray-400" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.691-.921 1.99 0l1.242 3.824a1 1 0 00.95.691h4.027c.969 0 1.371 1.243.588 1.81L14.71 12.33c-.3.22-.457.536-.457.863v4.027c0 .969-1.243 1.371-1.81.588l-3.824-1.242a1 1 0 00-.691 0L5.94 17.81c-.567.567-1.81.165-1.81-.796v-4.027c0-.327-.157-.643-.457-.863L2.24 9.352c-.783-.567-.381-1.81.588-1.81h4.027c.367 0 .707-.202.95-.588l1.242-3.824z" /></svg>`;
+            return Array.from({ length: 5 }, (_, i) => i < full ? fullStar : emptyStar).join('');
+        };
+
+        // --- Renderiza a galeria ---
+        const renderGallery = () => {
+            const container = document.getElementById('photo-gallery');
+            container.innerHTML = '';
+            if (!state.photos.length) {
+                container.innerHTML = `<div class="col-span-full text-center py-20 text-gray-500 text-xl">Nenhum projeto encontrado.</div>`;
+                return;
+            }
+            state.photos.forEach(projeto => {
+                const img = projeto.images?.[0]?.url || 'https://placehold.co/600x400/0095f6/ffffff?text=Projeto';
+                const card = document.createElement('div');
+                card.className = 'bg-white rounded-lg shadow-lg p-4 cursor-pointer hover:scale-[1.02] transition-all flex flex-col items-center';
+                card.setAttribute('data-project-id', projeto.id);
+                card.onclick = (e) => window.showModalFromCard(e.currentTarget);
+                const rating = projeto.averageRating || 0;
+                card.innerHTML = `
+                    <div class="w-full h-48 overflow-hidden rounded-md">
+                        <img src="${img}" class="w-full h-full object-cover">
+                    </div>
+                    <p class="font-bold text-lg text-indigo-700 mt-2">${projeto.tipoProjeto}</p>
+                    <p class="text-sm text-gray-600">${formatComodosList(projeto.listaComodos)}</p>
+                    <div class="flex items-center justify-center mt-1">${generateDisplayStars(rating)}</div>
+                `;
+                container.appendChild(card);
+            });
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('app-container').classList.remove('hidden');
+        };
+
+        // --- Listener do Firestore com filtro de tipos ---
+        const setupListeners = () => {
+            if (!auth.currentUser) return;
+            const tiposPermitidos = [
+                'Residencial - Interiores',
+                'Comercial - Arquitetônico',
+                'Residencial - Arquitetônico',
+                'Comercial - Interiores'
+            ];
+            const q = query(collection(db, `artifacts/${firebaseConfig.projectId}/public/data/galleries`));
+            onSnapshot(q, (snap) => {
+                const todos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                state.photos = todos.filter(p => tiposPermitidos.includes(p.tipoProjeto));
+                renderGallery();
+            }, (err) => {
+                console.error(err);
+                showMessage('Erro ao carregar projetos.', 'error');
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('app-container').classList.remove('hidden');
+            });
+        };
+    </script>
+</head>
+
+<body class="bg-gray-100 font-sans text-gray-800">
+
+    <div id="loading" class="fixed inset-0 flex items-center justify-center bg-gray-100 z-50">
+        <div class="text-center">
+            <div class="animate-spin h-16 w-16 rounded-full border-t-2 border-b-2 border-indigo-500 mx-auto"></div>
+            <p class="mt-4 text-gray-600">Carregando galeria...</p>
+        </div>
+    </div>
+
+    <div id="app-container" class="container mx-auto p-6 md:p-10 hidden">
+        <header class="mb-6">
+            <div id="message-box" class="opacity-0 hidden"></div>
+        </header>
+
+        <!-- TÍTULO À ESQUERDA -->
+        <div class="flex items-center mb-8">
+            <h2 class="text-3xl font-extrabold text-indigo-700 tracking-tight">
+                PORTFÓLIO ARQ. & INTERIORES
+            </h2>
+            <div class="flex-1 h-px bg-gray-300 ml-4"></div>
+        </div>
+
+        <section class="bg-white rounded-2xl shadow-xl p-6 md:p-8">
+            <div id="photo-gallery" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8"></div>
+        </section>
+    </div>
+</body>
+</html>
